@@ -5,7 +5,7 @@ All Hyperneat related logic resides here.
 import neat
 
 
-def create_phenotype_network(cppn, substrate, activation_function="sigmoid"):
+def create_phenotype_network(cppn, substrate, activation_function="sigmoid",  enable_leo=False, leo_threshold=0.0):
     """
     Creates a recurrent network using a cppn and a substrate.
     """
@@ -36,7 +36,7 @@ def create_phenotype_network(cppn, substrate, activation_function="sigmoid"):
     for oc in output_coordinates:
         idx = 0
         for layer in hidden_coordinates:
-            im = find_neurons(cppn, oc, layer, hidden_nodes[idx], False)
+            im = find_neurons(cppn, oc, layer, hidden_nodes[idx], False, enable_leo=enable_leo, leo_threshold=leo_threshold)
             idx += len(layer)
             if im:
                 node_evals.append(
@@ -53,7 +53,7 @@ def create_phenotype_network(cppn, substrate, activation_function="sigmoid"):
         for i in range(current_layer, len(hidden_coordinates)):
             for hc in layer:
                 im = find_neurons(
-                    cppn, hc, hidden_coordinates[i], hidden_nodes[idx], False)
+                    cppn, hc, hidden_coordinates[i], hidden_nodes[idx], False, enable_leo=enable_leo, leo_threshold=leo_threshold)
                 if im:
                     node_evals.append(
                         (hidden_nodes[counter], activation, sum, 0.0, 1.0, im))
@@ -68,7 +68,7 @@ def create_phenotype_network(cppn, substrate, activation_function="sigmoid"):
     for layer in hidden_coordinates:
         for hc in layer:
             im = find_neurons(cppn, hc, input_coordinates,
-                              input_nodes[0], False)
+                              input_nodes[0], False, enable_leo=enable_leo, leo_threshold=leo_threshold)
             if im:
                 node_evals.append(
                     (hidden_nodes[counter], activation, sum, 0.0, 1.0, im))
@@ -77,7 +77,8 @@ def create_phenotype_network(cppn, substrate, activation_function="sigmoid"):
     return neat.nn.RecurrentNetwork(input_nodes, output_nodes, node_evals)
 
 
-def find_neurons(cppn, coord, nodes, start_idx, outgoing, max_weight=5.0):
+def find_neurons(cppn, coord, nodes, start_idx, outgoing, max_weight=5.0,
+                 enable_leo=False, leo_threshold=0.0):
     """
     Find the neurons to which the given coord is connected.
     """
@@ -85,7 +86,8 @@ def find_neurons(cppn, coord, nodes, start_idx, outgoing, max_weight=5.0):
     idx = start_idx
 
     for node in nodes:
-        w = query_cppn(coord, node, outgoing, cppn, max_weight)
+        w = query_cppn(coord, node, outgoing, cppn, max_weight,
+                       enable_leo=enable_leo, leo_threshold=leo_threshold)
 
         if w != 0.0:  # Only include connection if the weight isn't 0.0.
             im.append((idx, w))
@@ -94,22 +96,32 @@ def find_neurons(cppn, coord, nodes, start_idx, outgoing, max_weight=5.0):
     return im
 
 
-def query_cppn(coord1, coord2, outgoing, cppn, max_weight=5.0):
+def query_cppn(coord_src, coord_dst, outgoing, cppn,
+               max_weight=5.0, enable_leo=False, leo_threshold=0.0):
     """
-    Get the weight from one point to another using the CPPN.
-    Takes into consideration which point is source/target.
+    向 CPPN 查询连线权重 (outputs[0]) 以及可选的 LEO (outputs[1]).
+    - 若 enable_leo=True 且 CPPN 拥有 >=2 输出，按 LEO 判断是否表达；
+    - 否则回退到单输出逻辑。
     """
-
     if outgoing:
-        i = [coord1[0], coord1[1], coord2[0], coord2[1], 1.0]
+        cppn_input = [coord_src[0], coord_src[1], coord_dst[0], coord_dst[1], 1.0]
     else:
-        i = [coord2[0], coord2[1], coord1[0], coord1[1], 1.0]
-    w = cppn.activate(i)[0]
-    if abs(w) > 0.2:  # If abs(weight) is below threshold, treat weight as 0.0.
-        if w > 0:
-            w = (w - 0.2) / 0.8
-        else:
-            w = (w + 0.2) / 0.8
-        return w * max_weight
-    else:
+        cppn_input = [coord_dst[0], coord_dst[1], coord_src[0], coord_src[1], 1.0]
+
+    o = cppn.activate(cppn_input)
+
+    # ---- 单/双输出统一处理 ----
+    w_raw = o[0]
+    leo_val = o[1] if enable_leo and len(o) > 1 else None
+
+    # 1) 若使用 LEO 且其值低于阈值 ⇒ 不表达
+    if leo_val is not None and leo_val < leo_threshold:
         return 0.0
+
+    # 2) 再看权值本身是否越过 ±0.2 的 dead-zone
+    if abs(w_raw) <= 0.2:
+        return 0.0
+
+    # 3) 线性压缩到 [-max_weight, max_weight]
+    w = (w_raw - 0.2) / 0.8 if w_raw > 0 else (w_raw + 0.2) / 0.8
+    return w * max_weight

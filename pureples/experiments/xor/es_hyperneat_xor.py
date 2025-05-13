@@ -41,11 +41,16 @@ def params(version):
 
 DYNAMIC_PARAMS = params(VERSION)
 
+
 # Config for CPPN.
 CONFIG = neat.config.Config(neat.genome.DefaultGenome, neat.reproduction.DefaultReproduction,
                             neat.species.DefaultSpeciesSet, neat.stagnation.DefaultStagnation,
                             'pureples/experiments/xor/config_cppn_xor')
 
+DYNAMIC_PARAMS.update({
+    "enable_leo":      CONFIG.enable_leo,     # 或 True
+    "leo_threshold":   CONFIG.leo_threshold   # 或自定值
+})
 
 def eval_fitness(genomes, config):
     """

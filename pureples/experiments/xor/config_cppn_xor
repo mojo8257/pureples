@@ -6,6 +6,10 @@ fitness_threshold     = 0.975
 pop_size              = 150
 reset_on_extinction   = False
 
+enable_leo            = true
+leo_bias_default      = -3.0
+locality_seed         = xaxis
+
 [DefaultGenome]
 # node activation options
 activation_default      = tanh

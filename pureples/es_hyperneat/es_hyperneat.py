@@ -28,6 +28,8 @@ class ESNetwork:
         self.activations = 2 ** params["max_depth"] + 1
         activation_functions = neat.activations.ActivationFunctionSet()
         self.activation = activation_functions.get(params["activation"])
+        self.enable_leo = params.get("enable_leo", False)
+        self.leo_threshold = params.get("leo_threshold", 0.0)
 
     def create_phenotype_network(self, filename=None):
         """
@@ -131,7 +133,7 @@ class ESNetwork:
 
             for c in p.cs:
                 c.w = query_cppn(coord, (c.x, c.y), outgoing,
-                                 self.cppn, self.max_weight)
+                                 self.cppn, self.max_weight, enable_leo=self.enable_leo, leo_threshold=self.leo_threshold)
 
             if (p.lvl < self.initial_depth) or (p.lvl < self.max_depth and self.variance(p)
                                                 > self.division_threshold):
@@ -151,13 +153,13 @@ class ESNetwork:
                 self.pruning_extraction(coord, c, outgoing)
             else:
                 d_left = abs(c.w - query_cppn(coord, (c.x - p.width,
-                                                      c.y), outgoing, self.cppn, self.max_weight))
+                                                      c.y), outgoing, self.cppn, self.max_weight, enable_leo=self.enable_leo, leo_threshold=self.leo_threshold))
                 d_right = abs(c.w - query_cppn(coord, (c.x + p.width,
-                                                       c.y), outgoing, self.cppn, self.max_weight))
+                                                       c.y), outgoing, self.cppn, self.max_weight, enable_leo=self.enable_leo, leo_threshold=self.leo_threshold))
                 d_top = abs(c.w - query_cppn(coord, (c.x, c.y - p.width),
-                                             outgoing, self.cppn, self.max_weight))
+                                             outgoing, self.cppn, self.max_weight, enable_leo=self.enable_leo, leo_threshold=self.leo_threshold))
                 d_bottom = abs(c.w - query_cppn(coord, (c.x, c.y +
-                                                        p.width), outgoing, self.cppn, self.max_weight))
+                                                        p.width), outgoing, self.cppn, self.max_weight, enable_leo=self.enable_leo, leo_threshold=self.leo_threshold))
 
                 con = None
                 if max(min(d_top, d_bottom), min(d_left, d_right)) > self.band_threshold:
