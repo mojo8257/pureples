@@ -179,39 +179,47 @@ class ESNetwork:
         """
         inputs = self.substrate.input_coordinates
         outputs = self.substrate.output_coordinates
-        hidden_nodes, unexplored_hidden_nodes = set(), set()
+        hidden_nodes = set()  # 发现过的所有隐藏节点
+        unexplored_hidden_nodes = set()  # “待办”队列
+        explored_hidden_nodes = set()  # ★ 新增：历史已探节点
         connections1, connections2, connections3 = set(), set(), set()
 
-        for x, y in inputs:  # Explore from inputs.
+        for x, y in inputs:
             root = self.division_initialization((x, y), True)
             self.pruning_extraction((x, y), root, True)
-            connections1 = connections1.union(self.connections)
-            for c in connections1:
-                hidden_nodes.add((c.x2, c.y2))
-            self.connections = set()
 
-        unexplored_hidden_nodes = copy.deepcopy(hidden_nodes)
+            connections1 |= self.connections
+            for c in self.connections:
+                hidden_nodes.add((c.x2, c.y2))      # 收集首批隐藏节点
+            self.connections = set()                # 清空临时缓存
 
-        for _ in range(self.iteration_level):  # Explore from hidden.
+        unexplored_hidden_nodes = hidden_nodes - explored_hidden_nodes
+
+        for _ in range(self.iteration_level):
+            if not unexplored_hidden_nodes:         # 早停：再无新节点
+                break
+
             for x, y in unexplored_hidden_nodes:
+                explored_hidden_nodes.add((x, y))   # ★ 标记为“已探”
                 root = self.division_initialization((x, y), True)
                 self.pruning_extraction((x, y), root, True)
-                connections2 = connections2.union(self.connections)
-                for c in connections2:
-                    hidden_nodes.add((c.x2, c.y2))
+
+                connections2 |= self.connections
+                for c in self.connections:
+                    hidden_nodes.add((c.x2, c.y2))  # 可能出现新隐藏节点
                 self.connections = set()
 
-            unexplored_hidden_nodes = hidden_nodes - unexplored_hidden_nodes
+            unexplored_hidden_nodes = hidden_nodes - explored_hidden_nodes  # ★ 真·未探
 
-        for x, y in outputs:  # Explore to outputs.
+        for x, y in outputs:
             root = self.division_initialization((x, y), False)
             self.pruning_extraction((x, y), root, False)
-            connections3 = connections3.union(self.connections)
+
+            connections3 |= self.connections
             self.connections = set()
 
-        connections = connections1.union(connections2.union(connections3))
-
-        return self.clean_net(connections)
+        all_connections = connections1 | connections2 | connections3
+        return self.clean_net(all_connections)
 
     def clean_net(self, connections):
         """
