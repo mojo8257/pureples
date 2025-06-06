@@ -3,7 +3,7 @@
 [NEAT]
 fitness_criterion     = max
 fitness_threshold     = 1000.0      # 论文采用 F = 1000/(1+E²) 的上限:contentReference[oaicite:0]{index=0}
-pop_size              = 150         # Appendix 1 中统一用 300 个体:contentReference[oaicite:1]{index=1}
+pop_size              = 300         # Appendix 1 中统一用 300 个体:contentReference[oaicite:1]{index=1}
 reset_on_extinction   = False
 
 enable_leo            = true
