@@ -8,7 +8,10 @@ ES-HyperNEAT Retina experiment  --  LEΟ + x-locality seed  (Risi & Stanley 2012
 放置路径:
   pureples/experiments/retina/retina_es_hyperneat.py
 """
-
+import os
+import sys
+import pickle
+import datetime
 import itertools
 import pickle
 import neat
@@ -17,6 +20,19 @@ import neat.nn
 from pureples.shared.substrate import Substrate
 from pureples.shared.visualize import draw_net
 from pureples.es_hyperneat.es_hyperneat import ESNetwork     # :contentReference[oaicite:0]{index=0}
+
+# 1. 确保把 pureples 目录加到 Python 搜索路径中（假设你已经拉取到 /content/pureples）
+sys.path.append('/content/pureples')
+os.environ['PYTHONPATH'] = '/content/pureples'
+
+# 2. 挂载 Google Drive，并创建一个专门的存储目录
+from google.colab import drive
+drive.mount('/content/drive', force_remount=True)
+
+# 在你的 Drive 根目录下创建一个文件夹用来保存 ES-HyperNEAT Retina 的结果
+DRIVE_ROOT = '/content/drive/MyDrive'
+SAVE_DIR    = os.path.join(DRIVE_ROOT, 'Retina_runs')
+os.makedirs(SAVE_DIR, exist_ok=True)
 
 # ────────────────────────────────────────────────────────────────
 # 0. 任务数据 ─ 8+8 合法 2×2 图案（硬编码自 Fig-15）
@@ -91,21 +107,62 @@ def retina_fitness(genomes, neat_config):
 # ────────────────────────────────────────────────────────────────
 # 5. 主循环
 def run(generations=2000):
-    pop   = neat.population.Population(CONFIG)
+    """
+    运行 ES-HyperNEAT Retina 实验，并将 Checkpointer、winner CPPN/ANN、可视化都保存到
+    SAVE_DIR 对应的 Google Drive 文件夹下。无需手动修改路径，脚本把所有结果都写到 Drive。
+    """
+    # 5.1 创建 Population 对象
+    pop = neat.population.Population(CONFIG)
+
+    # 5.2 追加 StatisticsReporter 和标准输出 reporter
     stats = neat.statistics.StatisticsReporter()
     pop.add_reporter(stats)
     pop.add_reporter(neat.reporting.StdOutReporter(True))
 
-    winner = pop.run(retina_fitness, generations)
-    print("Retina-ES-HyperNEAT done.\nBest genome:", winner)
+    # 5.3 追加 Checkpointer，每 10 代 或 每 30 分钟 存一次
+    #     prefix 指向 Drive 下的 SAVE_DIR
+    chk_prefix = os.path.join(SAVE_DIR, 'chkpt-')
+    checkpointer = neat.Checkpointer(
+        generation_interval=10,
+        time_interval_seconds=1800,
+        filename_prefix=chk_prefix
+    )
+    pop.add_reporter(checkpointer)
 
-    # 可视化与保存
+    # 5.4 运行 NEAT
+    winner = pop.run(retina_fitness, generations)
+    print("\n===== Retina-ES-HyperNEAT 完成 =====")
+    print("Best genome key:", winner.key, "  fitness:", winner.fitness)
+
+    # 5.5 所有输出都写到 Drive 下的 SAVE_DIR
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    # 5.5.1 保存最终 winner CPPN 到 Drive
     cppn = neat.nn.FeedForwardNetwork.create(winner, CONFIG)
-    winner_net = ESNetwork(SUBSTRATE, cppn, ES_PARAMS)\
-        .create_phenotype_network('pureples/experiments/retina/winner_retina.png')
-    draw_net(cppn, filename='pureples/experiments/retina/winner_cppn')
-    with open('pureples/experiments/retina/winner_cppn.pkl', 'wb') as f:
+    final_cppn_path = os.path.join(SAVE_DIR, f'winner_cppn_{timestamp}.pkl')
+    with open(final_cppn_path, 'wb') as f:
         pickle.dump(cppn, f, pickle.HIGHEST_PROTOCOL)
+    print("Saved final CPPN to:", final_cppn_path)
+
+    # 5.5.2 可视化 CPPN（保存 .png + .dot）到 Drive
+    # 注意：draw_net 会自己生成 .png 与 .dot，路径不带扩展名即可。
+    cppn_visual_path = os.path.join(SAVE_DIR, f'winner_cppn_vis_{timestamp}')
+    draw_net(cppn, filename=cppn_visual_path)
+    print("Saved CPPN visualization under:", cppn_visual_path + ".png")
+
+    # 5.5.3 生成最终 ANN 结构图，并保存到 Drive
+    #       draw_es 接受的 filename 同样不带扩展名，会写 .png
+    from pureples.es_hyperneat.es_hyperneat import ESNetwork
+    winner_net = ESNetwork(SUBSTRATE, cppn, ES_PARAMS) \
+                    .create_phenotype_network(filename=os.path.join(SAVE_DIR, f'winner_ann_{timestamp}.png'))
+    print("Saved final ANN structure image to Drive.")
+
+    # 5.5.4 将当前种群统计数据（.pkl）也保存一份，以便离线分析
+    stats_path = os.path.join(SAVE_DIR, f'stats_{timestamp}.pkl')
+    with open(stats_path, 'wb') as f:
+        pickle.dump(stats, f)
+    print("Saved StatisticsReporter data to:", stats_path)
+
+    print("\n所有文件已备份到 Google Drive。")
 
 if __name__ == '__main__':
     run()
