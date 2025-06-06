@@ -2,19 +2,19 @@
 
 [NEAT]
 fitness_criterion     = max
-fitness_threshold     = 1000.0      # 论文采用 F = 1000/(1+E²) 的上限:contentReference[oaicite:0]{index=0}
-pop_size              = 300         # Appendix 1 中统一用 300 个体:contentReference[oaicite:1]{index=1}
+fitness_threshold     = 1000.0
+pop_size              = 300
 reset_on_extinction   = False
 
 enable_leo            = true
-leo_bias_default      = -1.0        # 图 16 中 G1→LEO 偏置 = −1:contentReference[oaicite:2]{index=2}
-locality_seed         = xaxis       # 仅沿 x 轴的局部性种子；保持与代码一致
+leo_bias_default      = -1.0
+locality_seed         = xaxis
 
 [DefaultGenome]
 # node activation options (Retina 需更多函数)
 activation_default      = tanh
 activation_mutate_rate  = 0.5
-activation_options      = abs sigmoid gauss linear sin step tanh ramp  # Appendix 1 列表:contentReference[oaicite:3]{index=3}
+activation_options      = abs sigmoid gauss linear sin step tanh ramp
 
 aggregation_default     = sum
 aggregation_mutate_rate = 0.0
@@ -30,12 +30,12 @@ bias_mutate_rate        = 0.7
 bias_replace_rate       = 0.1
 
 # genome compatibility options
-compatibility_disjoint_coefficient = 1.0  # c1
-compatibility_weight_coefficient   = 0.1  # c3，Appendix 1:contentReference[oaicite:4]{index=4}
+compatibility_disjoint_coefficient = 1.0
+compatibility_weight_coefficient   = 0.1
 
 # connection add/remove rates — 取自 Appendix 1
-conn_add_prob           = 0.03      # link-addition 3 %:contentReference[oaicite:5]{index=5}
-conn_delete_prob        = 0.5       # 保持 XOR 默认值（论文未指定删除率）
+conn_add_prob           = 0.03
+conn_delete_prob        = 0.5
 
 # connection enable options
 enabled_default         = True
@@ -45,13 +45,13 @@ feed_forward            = True
 initial_connection      = full
 
 # node add/remove rates
-node_add_prob           = 0.02      # node-addition 2 %:contentReference[oaicite:6]{index=6}
-node_delete_prob        = 0.2       # 保持 XOR 默认值
+node_add_prob           = 0.02
+node_delete_prob        = 0.2
 
 # network parameters
 num_hidden              = 0
-num_inputs              = 5         # x1 y1 x2 y2 |L|
-num_outputs             = 1         # 仅权重输出；LEO 由库自动追加:contentReference[oaicite:7]{index=7}
+num_inputs              = 5
+num_outputs             = 1
 
 # node response options
 response_init_mean      = 1.0
@@ -68,7 +68,7 @@ weight_init_stdev       = 1.0
 weight_max_value        = 30
 weight_min_value        = -30
 weight_mutate_power     = 0.5
-weight_mutate_rate      = 0.94      # 94 % 概率变异 (link-weight mutation):contentReference[oaicite:8]{index=8}
+weight_mutate_rate      = 0.94
 weight_replace_rate     = 0.1
 
 [DefaultSpeciesSet]
@@ -77,8 +77,8 @@ compatibility_threshold = 3.0
 [DefaultStagnation]
 species_fitness_func = max
 max_stagnation       = 20
-species_elitism      = 30          # 10 % 精英 × 300 population:contentReference[oaicite:9]{index=9}
+species_elitism      = 30
 
 [DefaultReproduction]
-elitism            = 30           # 同上
-survival_threshold = 0.5          # Appendix 1 没给出，保持常用 50 %
+elitism            = 30
+survival_threshold = 0.5
