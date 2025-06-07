@@ -86,6 +86,18 @@ CONFIG = neat.config.Config(
     'pureples/experiments/retina/config_cppn_retina'
 )
 
+# —— sync 全局 LEO/Locality-Seed 到 genome_config ——
+CONFIG.genome_config.enable_leo      = CONFIG.enable_leo
+CONFIG.genome_config.locality_seed   = CONFIG.locality_seed
+CONFIG.genome_config.leo_bias_default= CONFIG.leo_bias_default
+
+if CONFIG.genome_config.enable_leo:
+    # 重新追加/更新 LEO 输出 key
+    CONFIG.genome_config.leo_output_key = CONFIG.genome_config.num_outputs
+    if CONFIG.genome_config.leo_output_key not in CONFIG.genome_config.output_keys:
+        CONFIG.genome_config.output_keys.append(CONFIG.genome_config.leo_output_key)
+    
+
 # 读取配置中的 LEO、阈值、局部种子三项，覆盖 ES_PARAMS
 ES_PARAMS.update(dict(
     enable_leo   = CONFIG.enable_leo,
