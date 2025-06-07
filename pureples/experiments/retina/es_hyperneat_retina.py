@@ -23,6 +23,8 @@ from pureples.shared.substrate import Substrate
 from pureples.es_hyperneat.es_hyperneat import ESNetwork
 from pureples.shared.visualize import draw_net
 
+import re
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 0. 全局常量：手动硬编码 “合法的 2×2 图案” (如论文 Fig.15 所示)
 #    左右 Retina 要求相同的 8 个合法子模式
@@ -124,6 +126,20 @@ def retina_fitness(genomes, neat_config):
         genome.fitness = 1000.0 / (1.0 + error**2)
 
 
+def resume_from_checkpoint(pop_size):
+    """如 SAVE_DIR 下已有 chkpt-*.pkl，则恢复最新；否则返回 None"""
+    DRIVE_SAVE_DIR = os.environ.get('SAVE_DIR',
+                                    '/content/drive/MyDrive/ESHyperNEAT_Retina')
+    ckpts = [f for f in os.listdir(DRIVE_SAVE_DIR) if re.match(r'chkpt-\d+', f)]
+    if not ckpts:
+        return None
+
+    latest = max(ckpts, key=lambda f: int(f.split('-')[1]))
+    print("[INFO] 检测到现有 checkpoint →", latest, "，将从此处继续")
+    return neat.Checkpointer.restore_checkpoint(
+        os.path.join(DRIVE_SAVE_DIR, latest)
+    )
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 5. 主训练入口：带 Checkpointer，把中间结果写入 SAVE_DIR
 def run(generations=2000):
@@ -137,7 +153,7 @@ def run(generations=2000):
     os.makedirs(DRIVE_SAVE_DIR, exist_ok=True)
 
     # 1) 创建 Population 对象
-    pop = neat.population.Population(CONFIG)
+    pop = resume_from_checkpoint(CONFIG.pop_size) or neat.Population(CONFIG)
 
     # 2) 添加必要的 Reporter
     stats = neat.statistics.StatisticsReporter()
