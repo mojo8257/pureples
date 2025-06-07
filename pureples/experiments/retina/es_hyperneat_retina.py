@@ -13,10 +13,11 @@ ES-HyperNEAT Retina 实验脚本  ——  支持 Checkpointer + 写入 Google Dr
 """
 
 import os
-import pickle
+import pickle, shutil
 import itertools
 import neat
 import neat.nn
+from neat.reporting import BaseReporter
 
 # 导入 pureples 内部需要的模块
 from pureples.shared.substrate import Substrate
@@ -24,6 +25,9 @@ from pureples.es_hyperneat.es_hyperneat import ESNetwork
 from pureples.shared.visualize import draw_net
 
 import re
+
+import multiprocessing as mp
+from neat.parallel import ParallelEvaluator
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 0. 全局常量：手动硬编码 “合法的 2×2 图案” (如论文 Fig.15 所示)
@@ -90,6 +94,34 @@ ES_PARAMS.update(dict(
 ))
 
 
+# 保存冠军 + 前 4 名，可视化 CPPN/Phenotype
+class TopGenomeSaver(BaseReporter):
+    def __init__(self, save_dir, top_k=5):
+        self.save_dir = save_dir
+        self.top_k = top_k
+
+    # 在每一代评估完后被 NEAT 调用
+    def post_evaluate(self, config, population, species, best_genome):
+        gen = population.generation
+        # 1) 选出按 fitness 降序的前 k 个体
+        top = sorted(population.values(), key=lambda g: g.fitness or -1, reverse=True)[:self.top_k]
+        for rank, g in enumerate(top):
+            tag = f'rank{rank:02d}'  # rank00 是冠军
+            # —— 保存 genome 二进制 ——
+            pkl = os.path.join(self.save_dir, f'{tag}.pkl')
+            with open(pkl, 'wb') as f:
+                pickle.dump(g, f, pickle.HIGHEST_PROTOCOL)
+            # —— 画 CPPN  ——
+            cppn = neat.nn.FeedForwardNetwork.create(g, config)
+            draw_net(cppn, filename=os.path.join(self.save_dir, f'{tag}_cppn.png'))
+            # —— 画 phenotype 网络 ——
+            esnet = ESNetwork(SUBSTRATE, cppn, ES_PARAMS)
+            esnet.create_phenotype_network(filename=os.path.join(self.save_dir, f'{tag}_phen.png'))
+        # 2) 记录当前 generation 号，便于外部脚本识别是否刷新成功
+        with open(os.path.join(self.save_dir, '_latest_gen.txt'), 'w') as f:
+            f.write(str(gen))
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 4. 评价函数  —— 对 256 种输入枚举，计算 MSE → 转换成 fitness
 def retina_fitness(genomes, neat_config):
@@ -124,6 +156,22 @@ def retina_fitness(genomes, neat_config):
 
         # 4) 把平方误差转换成 fitness：f = 1000 / (1 + error^2)
         genome.fitness = 1000.0 / (1.0 + error**2)
+
+
+def retina_eval_single(genome, neat_config):
+    """供 ParallelEvaluator 调用，评估并返回一个 genome 的适应度"""
+    # --- 与 retina_fitness() 内部的单个循环完全一致 ----------------
+    cppn = neat.nn.FeedForwardNetwork.create(genome, neat_config)
+    phen = ESNetwork(SUBSTRATE, cppn, ES_PARAMS).create_phenotype_network()
+    error = 0.0
+    for pattern in itertools.product((0, 1), repeat=8):
+        left, right = pattern[:4], pattern[4:]
+        target_left = 1.0 if left in VALID_PATTERNS else -1.0
+        target_right = 1.0 if right in VALID_PATTERNS else -1.0
+        inp = [3.0 if p else -3.0 for p in pattern]
+        out_left, out_right = phen.activate(inp)
+        error += (out_left - target_left) ** 2 + (out_right - target_right) ** 2
+    return 1000.0 / (1.0 + error ** 2)
 
 
 def resume_from_checkpoint(pop_size):
@@ -162,6 +210,9 @@ def run(generations=2000):
     # 标准的 StdOutReporter，每隔一代打印一次（会刷新到 nohup 日志中）
     pop.add_reporter(neat.reporting.StdOutReporter(True))
 
+    # ★ TopK：每代刷新 champion+前 4 名
+    pop.add_reporter(TopGenomeSaver(DRIVE_SAVE_DIR, top_k=5))
+
     # 添加 Checkpointer：每 10 代保存一次、或每 30 分钟保存一次，
     # filename_prefix 定位到 DRIVE_SAVE_DIR
     checkpointer = neat.Checkpointer(
@@ -171,8 +222,17 @@ def run(generations=2000):
     )
     pop.add_reporter(checkpointer)
 
-    # 3) 正式开始跑
-    winner = pop.run(retina_fitness, generations)
+    # 3) 构造 ParallelEvaluator  (自动 fork num_workers 个子进程)
+    n_cpu = os.cpu_count() or 1
+    pe = ParallelEvaluator(n_cpu, retina_eval_single)
+    # 4) 正式开始跑（并行评估）
+    winner = pop.run(pe.evaluate, generations)
+
+    # run() 最终保存 Winner 之前，先清掉旧图（保证与“每代输出”一致）
+    shutil.copy(os.path.join(DRIVE_SAVE_DIR, 'rank00_cppn.png'),
+                os.path.join(DRIVE_SAVE_DIR, 'winner_retina_cppn.png'))
+    shutil.copy(os.path.join(DRIVE_SAVE_DIR, 'rank00_phen.png'),
+                os.path.join(DRIVE_SAVE_DIR, 'winner_retina_substrate.png'))
 
     # 4) 训练结束后的打印提示
     print("\n=== Retina-ES-HyperNEAT 训练结束 ===")
@@ -203,5 +263,7 @@ def run(generations=2000):
 
 # ──────────────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
+    # Colab/Linux 容器推荐显式设为 'spawn'，防止潜在 fork 问题
+    mp.set_start_method('spawn', force=True)
     run()
 
