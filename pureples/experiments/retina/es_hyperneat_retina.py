@@ -102,7 +102,7 @@ class TopGenomeSaver(BaseReporter):
 
     # 在每一代评估完后被 NEAT 调用
     def post_evaluate(self, config, population, species, best_genome):
-        gen = population.generation
+        gen = species.generation     # species 参数是 SpeciesSet，对象里有 generation
         # 1) 选出按 fitness 降序的前 k 个体
         top = sorted(population.values(), key=lambda g: g.fitness or -1, reverse=True)[:self.top_k]
         for rank, g in enumerate(top):
