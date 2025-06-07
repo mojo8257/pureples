@@ -99,10 +99,14 @@ class TopGenomeSaver(BaseReporter):
     def __init__(self, save_dir, top_k=5):
         self.save_dir = save_dir
         self.top_k = top_k
+        self.cur_gen = 0
+
+    def start_generation(self, generation):
+        self.cur_gen = generation
 
     # 在每一代评估完后被 NEAT 调用
     def post_evaluate(self, config, population, species, best_genome):
-        gen = species.generation     # species 参数是 SpeciesSet，对象里有 generation
+        gen = self.cur_gen
         # 1) 选出按 fitness 降序的前 k 个体
         top = sorted(population.values(), key=lambda g: g.fitness or -1, reverse=True)[:self.top_k]
         for rank, g in enumerate(top):
