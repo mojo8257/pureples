@@ -3,7 +3,10 @@ All Hyperneat related logic resides here.
 """
 
 import neat
-
+# 3D_update--------------------------------------------------------------------------------
+from typing import List
+from pureples.shared.coordinate import Coordinate
+# 3D_update--------------------------------------------------------------------------------
 
 def create_phenotype_network(cppn, substrate, activation_function="sigmoid",  enable_leo=False, leo_threshold=0.0):
     """
@@ -77,42 +80,64 @@ def create_phenotype_network(cppn, substrate, activation_function="sigmoid",  en
     return neat.nn.RecurrentNetwork(input_nodes, output_nodes, node_evals)
 
 
-def find_neurons(cppn, coord, nodes, start_idx, outgoing, max_weight=5.0,
-                 enable_leo=False, leo_threshold=0.0):
+# 3D_update--------------------------------------------------------------------------------
+def find_neurons(cppn,
+                 coord: Coordinate,
+                 nodes: List[Coordinate],
+                 start_idx: int,
+                 outgoing: bool,
+                 max_weight: float = 5.0,
+                 enable_leo: bool = False,
+                 leo_threshold: float = 0.0):
     """
     Find the neurons to which the given coord is connected.
     """
     im = []
     idx = start_idx
 
-    for node in nodes:
-        w = query_cppn(coord, node, outgoing, cppn, max_weight,
-                       enable_leo=enable_leo, leo_threshold=leo_threshold)
+    for node_coord in nodes:
+        # 用 Coordinate.to_cppn_input 生成 7 维向量
+        input_vec = coord.to_cppn_input(node_coord, outgoing)
+        outputs = cppn.activate(input_vec)
 
-        if w != 0.0:  # Only include connection if the weight isn't 0.0.
+        # 原有 LEO+dead-zone+缩放逻辑
+        w_raw = outputs[0]
+        leo_val = outputs[1] if enable_leo and len(outputs) > 1 else None
+        if leo_val is not None and leo_val < leo_threshold:
+            w = 0.0
+        elif abs(w_raw) <= 0.2:
+            w = 0.0
+        else:
+            w = ((w_raw - 0.2) / 0.8 if w_raw > 0 else (w_raw + 0.2) / 0.8) * max_weight
+
+        if w != 0.0:
             im.append((idx, w))
         idx += 1
 
     return im
+# 3D_update--------------------------------------------------------------------------------
 
 
-def query_cppn(coord_src, coord_dst, outgoing, cppn,
-               max_weight=5.0, enable_leo=False, leo_threshold=0.0):
+# 3D_update--------------------------------------------------------------------------------
+def query_cppn(coord_src: Coordinate,
+               coord_dst: Coordinate,
+               outgoing: bool,
+               cppn,
+               max_weight: float = 5.0,
+               enable_leo: bool = False,
+               leo_threshold: float = 0.0):
     """
     向 CPPN 查询连线权重 (outputs[0]) 以及可选的 LEO (outputs[1]).
     - 若 enable_leo=True 且 CPPN 拥有 >=2 输出，按 LEO 判断是否表达；
     - 否则回退到单输出逻辑。
     """
-    if outgoing:
-        cppn_input = [coord_src[0], coord_src[1], coord_dst[0], coord_dst[1], 1.0]
-    else:
-        cppn_input = [coord_dst[0], coord_dst[1], coord_src[0], coord_src[1], 1.0]
-
-    o = cppn.activate(cppn_input)
+    # 统一用 to_cppn_input 输出七维向量
+    input_vec = coord_src.to_cppn_input(coord_dst, outgoing)
+    outputs = cppn.activate(input_vec)
 
     # ---- 单/双输出统一处理 ----
-    w_raw = o[0]
-    leo_val = o[1] if enable_leo and len(o) > 1 else None
+    w_raw = outputs[0]
+    leo_val = outputs[1] if enable_leo and len(outputs) > 1 else None
 
     # 1) 若使用 LEO 且其值低于阈值 ⇒ 不表达
     if leo_val is not None and leo_val < leo_threshold:
@@ -125,3 +150,4 @@ def query_cppn(coord_src, coord_dst, outgoing, cppn,
     # 3) 线性压缩到 [-max_weight, max_weight]
     w = (w_raw - 0.2) / 0.8 if w_raw > 0 else (w_raw + 0.2) / 0.8
     return w * max_weight
+# 3D_update--------------------------------------------------------------------------------

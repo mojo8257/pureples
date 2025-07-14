@@ -5,7 +5,11 @@ Varying visualisation tools.
 import pickle
 import graphviz
 import matplotlib.pyplot as plt
-
+# 3D_update--------------------------------------------------------------------------------
+import plotly.graph_objects as go
+# 3D_update--------------------------------------------------------------------------------
+from typing import List, Tuple
+from pureples.shared.coordinate import Coordinate
 
 def draw_net(net, filename=None, node_names={}, node_colors={}):
     """
@@ -50,6 +54,38 @@ def draw_net(net, filename=None, node_names={}, node_colors={}):
     dot.render(filename)
 
     return dot
+
+
+# 3D_update--------------------------------------------------------------------------------
+def draw_network_3d(nodes: List[Coordinate],edges: List[Tuple[Coordinate, Coordinate]],title: str = None) -> go.Figure:
+    """
+    使用 Plotly 绘制交互式 3D 网络：
+      - nodes: Coordinate 列表
+      - edges: (src, dst) 二元组列表
+    返回一个 go.Figure，可 .show() 或 .write_html()
+    """
+    fig = go.Figure()
+    # 节点散点
+    fig.add_trace(go.Scatter3d(
+        x=[n.x for n in nodes],
+        y=[n.y for n in nodes],
+        z=[n.z for n in nodes],
+        mode="markers",
+        marker=dict(size=4),
+        hovertext=[f"{n.x:.2f}, {n.y:.2f}, {n.z:.2f}" for n in nodes]
+    ))
+    # 连线
+    for src, dst in edges:
+        fig.add_trace(go.Scatter3d(
+            x=[src.x, dst.x],
+            y=[src.y, dst.y],
+            z=[src.z, dst.z],
+            mode="lines"
+        ))
+    if title:
+        fig.update_layout(title=title)
+    return fig
+# 3D_update--------------------------------------------------------------------------------
 
 
 def onclick(event):
