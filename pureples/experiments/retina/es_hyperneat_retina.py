@@ -31,6 +31,17 @@ from neat.parallel import ParallelEvaluator
 
 import argparse
 
+import importlib.resources as pkg_res
+
+import sys
+
+
+def positive_int(value):
+    ivalue = int(value)
+    if ivalue <= 0:
+        raise argparse.ArgumentTypeError("value must be positive")
+    return ivalue
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 0. 全局常量：手动硬编码 “合法的 2×2 图案” (如论文 Fig.15 所示)
 #    左右 Retina 要求相同的 8 个合法子模式
@@ -80,12 +91,13 @@ ES_PARAMS = es_params()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 3. NEAT-CPPN 的配置文件（请确保相对路径正确，位于：pureples/experiments/retina）
+cfg_path = pkg_res.files(__package__).joinpath("config_cppn_retina")
 CONFIG = neat.config.Config(
     neat.genome.DefaultGenome,
     neat.reproduction.DefaultReproduction,
     neat.species.DefaultSpeciesSet,
     neat.stagnation.DefaultStagnation,
-    'pureples/experiments/retina/config_cppn_retina'
+    str(cfg_path)
 )
 
 # —— sync 全局 LEO/Locality-Seed 到 genome_config ——
@@ -208,7 +220,7 @@ def resume_from_checkpoint(pop_size):
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 5. 主训练入口：带 Checkpointer，把中间结果写入 SAVE_DIR
-def run(generations=2000):
+def run(generations=2000, use_3d: bool = False):
     """
     主训练函数：
       - 把所有 Checkpointer 文件写到 SAVE_DIR
@@ -217,6 +229,14 @@ def run(generations=2000):
     # 从环境变量里读 SAVE_DIR；如果没有，就用默认的相对路径
     DRIVE_SAVE_DIR = os.environ.get('SAVE_DIR', '/content/drive/MyDrive/ESHyperNEAT_Retina')
     os.makedirs(DRIVE_SAVE_DIR, exist_ok=True)
+
+    # 根据 use_3d 覆盖 NEAT 配置的 CPPN 输入维度
+    # 2D → 5 维 (x1,y1,x2,y2,bias)，3D → 7 维 (x1,y1,z1,x2,y2,z2,bias)
+    CONFIG.genome_config.num_inputs = 7 if use_3d else 5
+    # 重新生成 input_keys 为 [-num_inputs, ..., -1]
+    CONFIG.genome_config.input_keys = list(
+        range(-CONFIG.genome_config.num_inputs, 0)
+    )
 
     # 1) 创建 Population 对象
     pop = resume_from_checkpoint(CONFIG.pop_size) or neat.Population(CONFIG)
@@ -292,11 +312,18 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--generations',
-        type=int,
+        type=positive_int,
         default=2000,
-        help='最大进化代数 (default: 2000)'
+        help="number of generations to run (must be positive)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help=argparse.SUPPRESS
     )
     args = parser.parse_args()
+
+    if args.dry_run:  # 仅解析 CLI 就退出，单元测试用
+        sys.exit(0)
 
     # 更新全局 ES_PARAMS，让 ESNetwork 在构造时读取到 use_3d
     ES_PARAMS['use_3d'] = args.use_3d
@@ -304,5 +331,8 @@ if __name__ == '__main__':
     mp.set_start_method('spawn', force=True)
     # 将 generations 传给 run()
     run(generations=args.generations)
-    
+
+
+retina_eval_single.__module__ = "pureples.experiments.retina.es_hyperneat_retina"
+
 

@@ -110,7 +110,8 @@ def test_connection3d_recording_and_hash_behavior():
     # 类型与属性校验
     assert isinstance(con, Connection3D)
     assert con.src.to_tuple() == (0.0, 0.0, 0.0)
-    assert con.dst.to_tuple() == c.to_tuple()
+    expected_dst = Coordinate(c.x, c.y, c.z)
+    assert con.dst.to_tuple() == expected_dst.to_tuple()
     assert con.weight == pytest.approx(c.w)
 
     # 再次添加等价连接，集合大小不变

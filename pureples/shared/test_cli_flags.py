@@ -5,11 +5,11 @@ import os
 import subprocess
 import runpy
 import pytest
+import types
 from pathlib import Path
 
 from pureples.es_hyperneat.es_hyperneat import ESNetwork
 import pureples.experiments.retina.es_hyperneat_retina as retina
-
 
 @pytest.mark.parametrize("cmd,args,expected", [
     # 场景 A-1：显式开启 --use-3d，应传递 use_3d=True 给 ESNetwork.__init__

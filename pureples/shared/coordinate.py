@@ -92,3 +92,6 @@ class Coordinate:
             str: String in the form 'Coordinate(x, y, z)'.
         """
         return f"Coordinate(x={self.x}, y={self.y}, z={self.z})"
+
+    def __hash__(self):
+        return hash((self.x, self.y, self.z))
