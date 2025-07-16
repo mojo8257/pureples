@@ -29,6 +29,8 @@ import re
 import multiprocessing as mp
 from neat.parallel import ParallelEvaluator
 
+import argparse
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 0. 全局常量：手动硬编码 “合法的 2×2 图案” (如论文 Fig.15 所示)
 #    左右 Retina 要求相同的 8 个合法子模式
@@ -279,7 +281,28 @@ def run(generations=2000):
 
 # ──────────────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
-    # Colab/Linux 容器推荐显式设为 'spawn'，防止潜在 fork 问题
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(
+        description="Run ES-HyperNEAT Retina experiment"
+    )
+    parser.add_argument(
+        '--use-3d',
+        action='store_true',
+        help='启用 3D 八叉树模式（默认为 2D 四叉树）'
+    )
+    parser.add_argument(
+        '--generations',
+        type=int,
+        default=2000,
+        help='最大进化代数 (default: 2000)'
+    )
+    args = parser.parse_args()
+
+    # 更新全局 ES_PARAMS，让 ESNetwork 在构造时读取到 use_3d
+    ES_PARAMS['use_3d'] = args.use_3d
+    # 防止多进程 fork 问题
     mp.set_start_method('spawn', force=True)
-    run()
+    # 将 generations 传给 run()
+    run(generations=args.generations)
+    
 
