@@ -119,6 +119,14 @@ ES_PARAMS.update(dict(
     locality_seed= CONFIG.locality_seed
 ))
 
+# 从环境变量读取 2D/3D 设置（1 表示 3D，0 或不设置 都为 2D）
+_USE_3D = os.getenv("ES_USE_3D", "0") == "1"
+# 覆盖 NEAT 配置里的输入维度
+CONFIG.genome_config.num_inputs = 7 if _USE_3D else 5
+CONFIG.genome_config.input_keys = list(range(-CONFIG.genome_config.num_inputs, 0))
+# 把开关也传给 ESNetwork
+ES_PARAMS["use_3d"] = _USE_3D
+
 
 # 保存冠军 + 前 4 名，可视化 CPPN/Phenotype
 class TopGenomeSaver(BaseReporter):
@@ -230,14 +238,6 @@ def run(generations=2000, use_3d: bool = False):
     DRIVE_SAVE_DIR = os.environ.get('SAVE_DIR', '/content/drive/MyDrive/ESHyperNEAT_Retina')
     os.makedirs(DRIVE_SAVE_DIR, exist_ok=True)
 
-    # 根据 use_3d 覆盖 NEAT 配置的 CPPN 输入维度
-    # 2D → 5 维 (x1,y1,x2,y2,bias)，3D → 7 维 (x1,y1,z1,x2,y2,z2,bias)
-    CONFIG.genome_config.num_inputs = 7 if use_3d else 5
-    # 重新生成 input_keys 为 [-num_inputs, ..., -1]
-    CONFIG.genome_config.input_keys = list(
-        range(-CONFIG.genome_config.num_inputs, 0)
-    )
-
     # 1) 创建 Population 对象
     pop = resume_from_checkpoint(CONFIG.pop_size) or neat.Population(CONFIG)
 
@@ -322,11 +322,13 @@ if __name__ == '__main__':
     )
     args = parser.parse_args()
 
+    # 把开关写到环境变量，让子进程也能看到
+    os.environ["ES_USE_3D"] = "1" if args.use_3d else "0"
+
     if args.dry_run:  # 仅解析 CLI 就退出，单元测试用
         sys.exit(0)
 
-    # 更新全局 ES_PARAMS，让 ESNetwork 在构造时读取到 use_3d
-    ES_PARAMS['use_3d'] = args.use_3d
+
     # 防止多进程 fork 问题
     mp.set_start_method('spawn', force=True)
     # 将 generations 传给 run()
