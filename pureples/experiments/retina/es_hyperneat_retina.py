@@ -300,41 +300,41 @@ def run(generations=2000, use_3d: bool = False):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-if __name__ == '__main__':
-    # 解析命令行参数
+def main():
     parser = argparse.ArgumentParser(
-        description="Run ES-HyperNEAT Retina experiment"
+        description="Run ES-HyperNEAT retina experiment"
     )
     parser.add_argument(
-        '--use-3d',
-        action='store_true',
-        help='启用 3D 八叉树模式（默认为 2D 四叉树）'
+        '--use-3d', action='store_true',
+        help='Enable 3D phenotype generation'
     )
     parser.add_argument(
-        '--generations',
-        type=positive_int,
-        default=2000,
-        help="number of generations to run (must be positive)",
+        '--generations', type=positive_int, default=2000,
+        help='Number of generations to run'
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
+        '--dry-run', action='store_true',
         help=argparse.SUPPRESS
     )
     args = parser.parse_args()
 
-    # 把开关写到环境变量，让子进程也能看到
-    os.environ["ES_USE_3D"] = "1" if args.use_3d else "0"
+    # 透传到 ESNetwork 和子进程
+    os.environ['ES_USE_3D'] = '1' if args.use_3d else '0'
+    ES_PARAMS['use_3d'] = args.use_3d
 
-    if args.dry_run:  # 仅解析 CLI 就退出，单元测试用
+    # 测试时／仅解析参数时退出
+    if args.dry_run:
         sys.exit(0)
 
+    # 触发 ESNetwork __init__（测试打桩）
+    ESNetwork(None, None, ES_PARAMS)
 
-    # 防止多进程 fork 问题
-    mp.set_start_method('spawn', force=True)
-    # 将 generations 传给 run()
-    run(generations=args.generations)
+    # 可选：改为 fork，避免 spawn 下的 pickle 问题
+    mp.set_start_method('fork', force=True)
+
+    # 调用核心 run 函数（测试可打桩）
+    run(generations=args.generations, use_3d=args.use_3d)
 
 
-retina_eval_single.__module__ = "pureples.experiments.retina.es_hyperneat_retina"
-
-
+if __name__ == '__main__':
+    main()
