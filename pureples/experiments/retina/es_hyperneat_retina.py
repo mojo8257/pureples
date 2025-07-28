@@ -326,9 +326,6 @@ def main():
     if args.dry_run:
         sys.exit(0)
 
-    # 触发 ESNetwork __init__（测试打桩）
-    ESNetwork(None, None, ES_PARAMS)
-
     # 可选：改为 fork，避免 spawn 下的 pickle 问题
     mp.set_start_method('fork', force=True)
 
