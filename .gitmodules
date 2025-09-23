@@ -1,4 +1,0 @@
-[submodule "external/neat-python"]
-	path = external/neat-python
-	url = https://github.com/mojo8257/neat-python.git
-	branch = v1.1.0-beta
