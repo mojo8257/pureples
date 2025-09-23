@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: 当前文件",
+      "type": "python",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Python: 以模块运行（示例）",
+      "type": "python",
+      "request": "launch",
+      "module": "pureples", // 如需运行具体示例模块，请改成实际模块名
+      "justMyCode": true
+    }
+  ],
+  "compounds": []
+}

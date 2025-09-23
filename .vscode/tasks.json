@@ -1,0 +1,10 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "Tests: pytest", "type": "shell", "command": ". .venv/bin/activate && pytest -q -ra --color=yes" },
+    { "label": "Lint: ruff",   "type": "shell", "command": ". .venv/bin/activate && ruff check ." },
+    { "label": "Format: black","type": "shell", "command": ". .venv/bin/activate && black ." },
+    { "label": "Sort: isort",  "type": "shell", "command": ". .venv/bin/activate && isort ." },
+    { "label": "Type: mypy",   "type": "shell", "command": ". .venv/bin/activate && mypy ." }
+  ]
+}
