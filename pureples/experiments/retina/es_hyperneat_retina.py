@@ -1,10 +1,10 @@
 """
-ES‑HyperNEAT Retina 实验脚本
+ES-HyperNEAT Retina 实验脚本
 --------------------------------
-支持 neat‑python + PurePLES，在 Colab 环境下可直接运行。
-本版本根据“方案 A” 重构了 2D/3D 开关的同步逻辑：
-  • 单一函数 apply_use_3d(flag) 负责写入所有全局状态。
-  • CLI 解析后才决定最终 flag，并写回 os.environ 确保 spawn 子进程一致。
+支持 neat-python + PurePLES，在 Colab 环境下可直接运行。
+本版本根据“方案 A” 重构了 2D/3D 开关的同步逻辑：
+  • 单一函数 apply_use_3d(flag) 负责写入所有全局状态。
+  • CLI 解析后才决定最终 flag，并写回 os.environ 确保 spawn 子进程一致。
   • 顶层在 import 时只读环境变量一次，以便子进程自动同步。
 """
 
@@ -33,14 +33,16 @@ from pureples.shared.visualize import draw_net
 # CLI 辅助
 # -----------------------------------------------------------------------------
 
+
 def positive_int(value: str) -> int:
     ivalue = int(value)
     if ivalue <= 0:
         raise argparse.ArgumentTypeError("value must be positive")
     return ivalue
 
+
 # ──────────────────────────────────────────────────────────────────────────────
-# 0. 数据常量：合法的 2×2 图案（论文 Fig‑15）
+# 0. 数据常量：合法的 2×2 图案（论文 Fig-15）
 # -----------------------------------------------------------------------------
 VALID_PATTERNS = {
     (1, 1, 1, 1), (1, 1, 0, 0),
@@ -60,11 +62,12 @@ OUTPUT_COORDS = [(-0.5, 1.0), (0.5, 1.0)]
 SUBSTRATE = Substrate(INPUT_COORDS, OUTPUT_COORDS)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 2. ES‑HyperNEAT 专用参数（Appendix 1）
+# 2. ES-HyperNEAT 专用参数（Appendix 1）
 # -----------------------------------------------------------------------------
 
+
 def es_params() -> dict:
-    """默认的 ES‑HyperNEAT 参数表。后续会被 CONFIG 覆盖三项。"""
+    """默认的 ES-HyperNEAT 参数表。后续会被 CONFIG 覆盖三项。"""
     return dict(
         initial_depth=2,
         max_depth=5,
@@ -79,10 +82,11 @@ def es_params() -> dict:
         locality_seed="xaxis",
     )
 
+
 ES_PARAMS = es_params()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 3. 读取 NEAT‑CPPN 配置文件
+# 3. 读取 NEAT-CPPN 配置文件
 # -----------------------------------------------------------------------------
 CFG_PATH = pkg_res.files(__package__).joinpath("config_cppn_retina")
 CONFIG = neat.config.Config(
@@ -93,7 +97,7 @@ CONFIG = neat.config.Config(
     str(CFG_PATH),
 )
 
-# 把 LEO / locality‑seed 三项同步到 genome_config，并覆盖 ES_PARAMS
+# 把 LEO / locality-seed 三项同步到 genome_config，并覆盖 ES_PARAMS
 CONFIG.genome_config.enable_leo = CONFIG.enable_leo
 CONFIG.genome_config.locality_seed = CONFIG.locality_seed
 CONFIG.genome_config.leo_bias_default = CONFIG.leo_bias_default
@@ -101,7 +105,8 @@ CONFIG.genome_config.leo_bias_default = CONFIG.leo_bias_default
 if CONFIG.genome_config.enable_leo:
     CONFIG.genome_config.leo_output_key = CONFIG.genome_config.num_outputs
     if CONFIG.genome_config.leo_output_key not in CONFIG.genome_config.output_keys:
-        CONFIG.genome_config.output_keys.append(CONFIG.genome_config.leo_output_key)
+        CONFIG.genome_config.output_keys.append(
+            CONFIG.genome_config.leo_output_key)
 
 ES_PARAMS.update(
     enable_leo=CONFIG.enable_leo,
@@ -110,14 +115,16 @@ ES_PARAMS.update(
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 3‑D 开关同步逻辑
+# 3-D 开关同步逻辑
 # -----------------------------------------------------------------------------
 
+
 def apply_use_3d(flag: bool) -> None:
-    """同步 3‑D 开关到所有全局状态（ES_PARAMS / CONFIG）。"""
     ES_PARAMS["use_3d"] = flag
-    CONFIG.genome_config.num_inputs = 7 if flag else 5
-    CONFIG.genome_config.input_keys = list(range(-CONFIG.genome_config.num_inputs, 0))
+    CONFIG.genome_config.num_inputs = 7  # 固定为 7；2D 情况下 z=0 以实现兼容
+    CONFIG.genome_config.input_keys = list(
+        range(-CONFIG.genome_config.num_inputs, 0))
+
 
 # 顶层：spawn 子进程 import 时自动同步（环境变量兜底）
 apply_use_3d(os.getenv("ES_USE_3D", "0") == "1")
@@ -125,6 +132,7 @@ apply_use_3d(os.getenv("ES_USE_3D", "0") == "1")
 # ──────────────────────────────────────────────────────────────────────────────
 # 4. 评估函数 & 并行桩
 # -----------------------------------------------------------------------------
+
 
 def retina_eval_single(genome, neat_config):
     """单个 genome 的适应度评估（供 ParallelEvaluator 调用）。"""
@@ -143,6 +151,8 @@ def retina_eval_single(genome, neat_config):
 # ──────────────────────────────────────────────────────────────────────────────
 # 5. Reporter：每代保存前 K 名
 # -----------------------------------------------------------------------------
+
+
 class TopGenomeSaver(BaseReporter):
     def __init__(self, save_dir: str, top_k: int = 5):
         self.save_dir = save_dir
@@ -163,7 +173,8 @@ class TopGenomeSaver(BaseReporter):
             with open(pkl, "wb") as f:
                 pickle.dump(g, f, pickle.HIGHEST_PROTOCOL)
             cppn = neat.nn.FeedForwardNetwork.create(g, config)
-            draw_net(cppn, filename=os.path.join(self.save_dir, f"{tag}_cppn.png"))
+            draw_net(cppn, filename=os.path.join(
+                self.save_dir, f"{tag}_cppn.png"))
             esnet = ESNetwork(SUBSTRATE, cppn, ES_PARAMS)
             esnet.create_phenotype_network(
                 filename=os.path.join(self.save_dir, f"{tag}_phen.png")
@@ -175,9 +186,11 @@ class TopGenomeSaver(BaseReporter):
 # 6. 主训练函数
 # -----------------------------------------------------------------------------
 
+
 def resume_from_checkpoint(pop_size: int):
-    drive_dir = os.environ.get("SAVE_DIR", "/content/drive/MyDrive/ESHyperNEAT_Retina")
-    ckpts = [f for f in os.listdir(drive_dir) if re.match(r"chkpt-\\d+", f)]
+    drive_dir = os.environ.get(
+        "SAVE_DIR", "/content/drive/MyDrive/ESHyperNEAT_Retina")
+    ckpts = [f for f in os.listdir(drive_dir) if re.match(r"^chkpt-\d+$", f)]
     if not ckpts:
         return None
     latest = max(ckpts, key=lambda f: int(f.split("-")[1]))
@@ -185,9 +198,21 @@ def resume_from_checkpoint(pop_size: int):
     return neat.Checkpointer.restore_checkpoint(os.path.join(drive_dir, latest))
 
 
+# A3: 存在即复制的小工具，缺失或异常仅告警，不中断流程
+def _copy_if_exists(src: str, dst: str) -> None:
+    try:
+        if os.path.exists(src):
+            shutil.copy(src, dst)
+        else:
+            print(f"[WARN][A3] skip copy: missing '{os.path.basename(src)}'")
+    except Exception as e:
+        print(f"[WARN][A3] copy failed '{src}' -> '{dst}': {e!r}")
+
+
 def run(generations: int = 2000):
     """核心训练循环。"""
-    drive_dir = os.environ.get("SAVE_DIR", "/content/drive/MyDrive/ESHyperNEAT_Retina")
+    drive_dir = os.environ.get(
+        "SAVE_DIR", "/content/drive/MyDrive/ESHyperNEAT_Retina")
     os.makedirs(drive_dir, exist_ok=True)
 
     pop = resume_from_checkpoint(CONFIG.pop_size) or neat.Population(CONFIG)
@@ -209,11 +234,19 @@ def run(generations: int = 2000):
     pe = neat.parallel.ParallelEvaluator(n_cpu, retina_eval_single)
     winner = pop.run(pe.evaluate, generations)
 
-    # 收尾：把最终结果复制为 winner_* 文件
-    shutil.copy(os.path.join(drive_dir, "rank00_cppn.png"), os.path.join(drive_dir, "winner_retina_cppn.png"))
-    shutil.copy(os.path.join(drive_dir, "rank00_phen.png"), os.path.join(drive_dir, "winner_retina_substrate.png"))
+    # 收尾：把最终结果复制为 winner_* 文件（存在即复制，缺失则告警但不中断）
+    _copy_if_exists(os.path.join(drive_dir, "rank00_cppn.png"),
+                    os.path.join(drive_dir, "winner_retina_cppn.png"))
+    _copy_if_exists(os.path.join(drive_dir, "rank00_phen.png"),
+                    os.path.join(drive_dir, "winner_retina_substrate.png"))
 
-    print("\n=== Retina‑ES‑HyperNEAT 训练结束 ===")
+    print("\n=== Retina-ES-HyperNEAT 训练结束 ===")
+    # 在桩/短跑/早停情况下 winner 可能为 None：跳过所有 winner 依赖的后处理
+    if winner is None:
+        print("[WARN][A3] winner is None（stub/dry-run/early stop），跳过 winner 依赖后处理。")
+        return None
+
+    # 仅在 winner 存在时打印详情与后处理
     print("Winner Genome ID:", winner.key, " Fitness=", winner.fitness)
 
     cppn = neat.nn.FeedForwardNetwork.create(winner, CONFIG)
@@ -227,15 +260,21 @@ def run(generations: int = 2000):
     with open(cppn_pkl, "wb") as f:
         pickle.dump(cppn, f, pickle.HIGHEST_PROTOCOL)
 
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 7. CLI 入口
 # -----------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Run ES‑HyperNEAT retina experiment")
-    parser.add_argument("--use-3d", action="store_true", help="Enable 3D phenotype generation")
-    parser.add_argument("--generations", type=positive_int, default=2000, help="Number of generations to run")
-    parser.add_argument("--dry-run", action="store_true", help=argparse.SUPPRESS)
+    parser = argparse.ArgumentParser(
+        description="Run ES-HyperNEAT retina experiment")
+    parser.add_argument("--use-3d", action="store_true",
+                        help="Enable 3D phenotype generation")
+    parser.add_argument("--generations", type=positive_int,
+                        default=2000, help="Number of generations to run")
+    parser.add_argument("--dry-run", action="store_true",
+                        help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     # CLI 高于环境：只看 CLI，缺省 False

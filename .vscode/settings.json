@@ -1,0 +1,54 @@
+{
+  // —— 强制对齐到项目内 .venv（编辑器 & 终端）——
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python.terminal.activateEnvironment": true,
+
+  // —— 语言服务：仅检查“已打开的文件”，避免全仓库泛红 —— 
+  "python.languageServer": "Pylance",
+  "python.analysis.diagnosticMode": "openFilesOnly",
+
+  // —— 降低常见告警的严重度，避免“缺少导入”直接变红 —— 
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingImports": "warning",
+    "reportMissingModuleSource": "warning",
+    "reportUnusedImport": "warning",
+    "reportUnusedVariable": "warning"
+  },
+
+  // —— 把第三方/构建目录从分析里排除（不在这些目录里报错）——
+  "python.analysis.exclude": [
+    "**/.venv/**",
+    "**/build/**",
+    "**/bulid/**",
+    "external/**"                // 你的 neat 子模块源码放这里
+  ],
+
+  // —— 补充源码路径（可选，已 -e 安装时一般不用，但加上更稳）——
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}",
+    "${workspaceFolder}/external/neat-python"
+  ],
+
+  // —— 测试：使用 pytest，默认从 tests/ 收集 —— 
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.cwd": "${workspaceFolder}",
+  "python.testing.pytestArgs": ["tests"],
+
+  // —— 代码风格（可按你仓库习惯调整）——
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "ms-python.black-formatter",
+
+  // —— 资源管理器/搜索忽略 —— 
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true
+  },
+  "search.exclude": {
+    ".venv": true,
+    "**/__pycache__": true,
+    "external": true,
+    "build": true,
+    "bulid": true
+  }
+}

@@ -13,8 +13,6 @@ from typing import Tuple
 from pureples.shared.coordinate import Coordinate
 
 
-
-
 class QuadPoint:
     """
     Class representing an area in the quadtree.
@@ -29,6 +27,7 @@ class QuadPoint:
         self.cs = [None] * 4
         self.lvl = lvl
 
+
 class OctPoint:
     """
     Class representing a region in the octree.
@@ -36,7 +35,7 @@ class OctPoint:
     """
 
     def __init__(self, x: float, y: float, z: float,
-                     width: float, lvl: int):
+                 width: float, lvl: int):
         self.x = x
         self.y = y
         self.z = z
@@ -73,6 +72,7 @@ class Connection3D:
     """
     Represents a connection between two 3D coordinates with a weight.
     """
+
     def __init__(self,
                  src: Coordinate,
                  dst: Coordinate,
@@ -133,62 +133,90 @@ class ESNetwork:
         self.leo_threshold = params.get("leo_threshold", 0.0)
         self.use_3d = params.get("use_3d", False)
 
+    def _ensure_conn3d(self, c):
+        # 已是新结构：直接返回
+        if hasattr(c, "src") and hasattr(c, "dst"):
+            return c
+        # 旧结构 → 包一层 Coordinate，weight 兼容 w/weight 两种字段
+        return Connection3D(
+            src=Coordinate(c.x1, c.y1, 0.0),
+            dst=Coordinate(c.x2, c.y2, 0.0),
+            weight=getattr(c, "weight", getattr(c, "w", 0.0)),
+        )
+
     def create_phenotype_network(self, filename=None):
         """
         Create a RecurrentNetwork using the ES-HyperNEAT approach.
+        产出：
+        - net = neat.nn.RecurrentNetwork(input_nodes, output_nodes, node_evals)
+        其中 node_evals 的每一项是一个元组：
+        (node_id, activation_fn, aggregation_fn, bias, response, inputs)
         """
+        # 1) 拿到 I/O 坐标与固定的 I/O 节点 id
+        # list[Coordinate]
         input_coordinates = self.substrate.input_coordinates
+        # list[Coordinate]
         output_coordinates = self.substrate.output_coordinates
 
         input_nodes = list(range(len(input_coordinates)))
         output_nodes = list(range(len(input_nodes), len(
-            input_nodes)+len(output_coordinates)))
-        hidden_idx = len(input_coordinates)+len(output_coordinates)
+            input_nodes) + len(output_coordinates)))
+        hidden_idx = len(input_coordinates) + len(output_coordinates)
 
-        coordinates, indices, draw_connections, node_evals = [], [], [], []
-        nodes = {}
+        # 2) 坐标 → 节点 id 的映射（先登记 I/O）
+        coords_to_id: dict[Coordinate, int] = dict(
+            zip(input_coordinates + output_coordinates, input_nodes + output_nodes)
+        )
 
-        coordinates.extend(input_coordinates)
-        coordinates.extend(output_coordinates)
-        indices.extend(input_nodes)
-        indices.extend(output_nodes)
-
-        # Map input and output coordinates to their IDs.
-        coords_to_id = dict(zip(coordinates, indices))
-
-        # Where the magic happens.
+        # 3) 生产端：返回隐藏节点与边（Coordinate / Connection3D）
         hidden_nodes, connections = self.es_hyperneat()
 
-
-        # Map hidden coordinates to their IDs.
+        # 4) 给隐藏节点分配 ID
         for coord in hidden_nodes:
-            coords_to_id[coord] = hidden_idx
-            hidden_idx += 1
+            if coord not in coords_to_id:
+                coords_to_id[coord] = hidden_idx
+                hidden_idx += 1
 
+        # 5) 兜底：确保所有连边端点都有 ID
+        for c in connections:
+            if c.src not in coords_to_id:
+                coords_to_id[c.src] = hidden_idx
+                hidden_idx += 1
+            if c.dst not in coords_to_id:
+                coords_to_id[c.dst] = hidden_idx
+                hidden_idx += 1
 
-        # 对每个 Coordinate，检查对应的 Connection3D.dst
-        for coord, idx in coords_to_id.items():
-            for c in connections:
-                if c.dst == coord:              # 如果连接的目的地坐标与当前 coord 相同
-                    draw_connections.append(c)
-                    src_id = coords_to_id[c.src]
-                    if idx in nodes:
-                        nodes[idx].append((src_id, c.weight))
-                    else:
-                        nodes[idx] = [(src_id, c.weight)]
-        # --------------------------------------------------------------------------------------
+        # 6) 构造 node_evals：按“目标节点”聚合入边
+        #    统一与 hyperneat.py：activation = self.activation，aggregation = sum，bias=0.0，response=1.0
+        nodes_incoming: dict[int, list[tuple[int, float]]] = {}
+        draw_connections = []  # 给可视化用
+        for c in connections:
+            dst_id = coords_to_id[c.dst]
+            src_id = coords_to_id[c.src]
+            nodes_incoming.setdefault(dst_id, []).append((src_id, c.weight))
+            draw_connections.append(c)
 
-        # Combine the indices with the connections/links;
-        # forming node_evals used by the RecurrentNetwork.
-        for idx, links in nodes.items():
-            node_evals.append((idx, self.activation, sum, 0.0, 1.0, links))
+        node_evals = []
+        for nid, in_edges in nodes_incoming.items():
+            node_evals.append((nid, self.activation, sum, 0.0, 1.0, in_edges))
 
-        # Visualize the network?
+        # 7) 直接用构造函数创建递归网络（不要用 .create(...)）
+        net = neat.nn.RecurrentNetwork(input_nodes, output_nodes, node_evals)
+
+        # 8) 可视化（如果需要）：把 Coordinate/Connection3D 适配成老绘图所需的“元组坐标 + x1/y1/x2/y2/weight”
         if filename is not None:
-            draw_es(coords_to_id, draw_connections, filename)
+            legacy_id_to_coords = {
+                coord.to_tuple(): idx for coord, idx in coords_to_id.items()}
+            legacy_edges = []
+            for c in draw_connections:
+                legacy_edges.append(type("LegacyConn", (), {
+                    "x1": c.src.x, "y1": c.src.y,
+                    "x2": c.dst.x, "y2": c.dst.y,
+                    "weight": c.weight
+                })())
+            draw_es(legacy_id_to_coords, legacy_edges, filename)
 
-        # This is actually a feedforward network.
-        return neat.nn.RecurrentNetwork(input_nodes, output_nodes, node_evals)
+        return net
 
     @staticmethod
     def get_weights(p):
@@ -196,6 +224,7 @@ class ESNetwork:
         Recursively collect all leaf weights in a QuadPoint or OctPoint.
         """
         temp = []
+
         def loop(pp):
             if pp is not None and all(child is not None for child in pp.cs):
                 # 动态遍历所有子节点，无论是四叉还是八叉
@@ -234,12 +263,10 @@ class ESNetwork:
             p.cs[3] = QuadPoint(p.x + p.width/2.0, p.y -
                                 p.width/2.0, p.width/2.0, p.lvl + 1)
 
-
             for c in p.cs:
                 dst = Coordinate(c.x, c.y)
                 c.w = query_cppn(coord, dst, outgoing,
                                  self.cppn, self.max_weight, enable_leo=self.enable_leo, leo_threshold=self.leo_threshold)
-
 
             if (p.lvl < self.initial_depth) or (p.lvl < self.max_depth and self.variance(p)
                                                 > self.division_threshold):
@@ -280,7 +307,6 @@ class ESNetwork:
                 queue.extend(p.cs)
         return root
 
-
     def pruning_extraction_2d(self, coord, p, outgoing):
         """
         Determines which connections to express - high variance = more connetions.
@@ -296,33 +322,39 @@ class ESNetwork:
                 top = Coordinate(c.x, c.y - p.width)
                 bottom = Coordinate(c.x, c.y + p.width)
 
-                d_left   = abs(c.w - query_cppn(coord, left,   outgoing,
-                                            self.cppn, self.max_weight,
-                                            enable_leo=self.enable_leo,
-                                            leo_threshold=self.leo_threshold))
-                d_right  = abs(c.w - query_cppn(coord, right,  outgoing,
-                                            self.cppn, self.max_weight,
-                                            enable_leo=self.enable_leo,
-                                            leo_threshold=self.leo_threshold))
-                d_top    = abs(c.w - query_cppn(coord, top,    outgoing,
-                                            self.cppn, self.max_weight,
-                                            enable_leo=self.enable_leo,
-                                            leo_threshold=self.leo_threshold))
+                d_left = abs(c.w - query_cppn(coord, left,   outgoing,
+                                              self.cppn, self.max_weight,
+                                              enable_leo=self.enable_leo,
+                                              leo_threshold=self.leo_threshold))
+                d_right = abs(c.w - query_cppn(coord, right,  outgoing,
+                                               self.cppn, self.max_weight,
+                                               enable_leo=self.enable_leo,
+                                               leo_threshold=self.leo_threshold))
+                d_top = abs(c.w - query_cppn(coord, top,    outgoing,
+                                             self.cppn, self.max_weight,
+                                             enable_leo=self.enable_leo,
+                                             leo_threshold=self.leo_threshold))
                 d_bottom = abs(c.w - query_cppn(coord, bottom, outgoing,
-                                            self.cppn, self.max_weight,
-                                            enable_leo=self.enable_leo,
-                                            leo_threshold=self.leo_threshold))
+                                                self.cppn, self.max_weight,
+                                                enable_leo=self.enable_leo,
+                                                leo_threshold=self.leo_threshold))
 
                 con = None
                 if max(min(d_top, d_bottom), min(d_left, d_right)) > self.band_threshold:
+                    dst = Coordinate(c.x, c.y, 0.0)  # 2D 用 z=0
                     if outgoing:
-                        con = Connection(coord.x, coord.y, c.x, c.y, c.w)
+                        con = Connection3D(src=coord, dst=dst, weight=c.w)
                     else:
-                        con = Connection(c.x, c.y, coord.x, coord.y, c.w)
+                        con = Connection3D(src=dst, dst=coord, weight=c.w)
                 if con is not None:
                     # Nodes will only connect upwards.
                     # If connections to same layer is wanted, change to con.y1 <= con.y2.
-                    if not c.w == 0.0 and con.y1 < con.y2 and not (con.x1 == con.x2 and con.y1 == con.y2):
+                    if (
+                        c.w != 0.0 and
+                        con.src.y < con.dst.y and
+                        not (con.src.x == con.dst.x and con.src.y ==
+                             con.dst.y and con.src.z == con.dst.z)
+                    ):
                         self.connections.add(con)
 
     def pruning_extraction_3d(self, coord, p, outgoing):
@@ -362,154 +394,172 @@ class ESNetwork:
                         con = Connection3D(src=dst, dst=coord, weight=c.w)
                     self.connections.add(con)
 
-
     def es_hyperneat(self):
         """
-        Explores the hidden nodes and their connections.
+        Explores hidden nodes and their connections with ES-HyperNEAT.
+
+        生产端统一约定：
+        - 隐藏节点集合：set[Coordinate]
+        - 连接集合：set[Connection3D]（成员包含 src/dst 两端的 Coordinate）
+
+        说明：
+        - 三个阶段：从输入出发 → 隐藏迭代扩张 → 从输出反向；
+        - 每个阶段的探索（division/pruning）产物暂存于 self.connections，
+          在汇合点并入阶段集合并清空 self.connections。
         """
-        inputs = self.substrate.input_coordinates
-        outputs = self.substrate.output_coordinates
-        hidden_nodes: set[tuple[float, float, float]] = set()  # 发现过的所有隐藏节点
-        unexplored_hidden_nodes: set[tuple[float, float, float]] = set()  # “待办”队列
-        explored_hidden_nodes: set[tuple[float, float, float]] = set()  # ★ 新增：历史已探节点
-        connections1, connections2, connections3 = set(), set(), set()
+        inputs = self.substrate.input_coordinates   # list[Coordinate]
+        outputs = self.substrate.output_coordinates  # list[Coordinate]
 
-        # 第一阶段：从输入节点探索
+        # —— 隐藏节点的“已发现 / 待探索 / 已探索”集合（全用 Coordinate）——
+        hidden_nodes: set[Coordinate] = set()
+        unexplored_hidden_nodes: set[Coordinate] = set()
+        explored_hidden_nodes: set[Coordinate] = set()
+
+        # 三段候选连接集合（Connection3D）
+        connections1: set[Connection3D] = set()
+        connections2: set[Connection3D] = set()
+        connections3: set[Connection3D] = set()
+
+        # =====================
+        # 第一阶段：从输入节点探索（outgoing=True）
+        # =====================
         for coord in inputs:
-
             if self.use_3d:
                 root = self.division_initialization_3d(coord, True)
-            else:
-                root = self.division_initialization_2d(coord, True)
-
-            if self.use_3d:
                 self.pruning_extraction_3d(coord, root, True)
             else:
+                root = self.division_initialization_2d(coord, True)
                 self.pruning_extraction_2d(coord, root, True)
 
+            # 结构严谨：生产端必须产出 Connection3D（含 src/dst）
+            assert all(hasattr(c, "src") and hasattr(c, "dst") for c in self.connections), \
+                "ES-HyperNEAT pruning must return Connection3D edges with src/dst"
 
-            connections1 |= self.connections
+            connections1 |= set(self.connections)
+            # 记录目的端出现过的隐藏节点（排除 I/O）
             for c in self.connections:
-                # c.dst 是 Coordinate，对应旧 c.x2, c.y2
-                hidden_nodes.add(c.dst.to_tuple())
+                if (c.dst not in inputs) and (c.dst not in outputs):
+                    hidden_nodes.add(c.dst)
             self.connections.clear()
 
         unexplored_hidden_nodes = hidden_nodes - explored_hidden_nodes
 
-        # 第二阶段：迭代探索隐藏节点
+        # =====================
+        # 第二阶段：迭代探索隐藏节点（outgoing=True）
+        # =====================
         for _ in range(self.iteration_level):
             if not unexplored_hidden_nodes:
                 break
 
-            for node in unexplored_hidden_nodes:
-                # node 是 (x, y, z)
+            for node in list(unexplored_hidden_nodes):
                 explored_hidden_nodes.add(node)
-                coord = Coordinate(*node)
-
+                coord = node  # 现在 node 已是 Coordinate，无需再从 tuple 还原
 
                 if self.use_3d:
                     root = self.division_initialization_3d(coord, True)
-                else:
-                    root = self.division_initialization_2d(coord, True)
-
-                if self.use_3d:
                     self.pruning_extraction_3d(coord, root, True)
                 else:
+                    root = self.division_initialization_2d(coord, True)
                     self.pruning_extraction_2d(coord, root, True)
 
+                assert all(hasattr(c, "src") and hasattr(c, "dst") for c in self.connections), \
+                    "ES-HyperNEAT pruning must return Connection3D edges with src/dst"
 
-                connections2 |= self.connections
+                connections2 |= set(self.connections)
                 for c in self.connections:
-                    hidden_nodes.add(c.dst.to_tuple())
+                    if (c.dst not in inputs) and (c.dst not in outputs):
+                        hidden_nodes.add(c.dst)
                 self.connections.clear()
 
             unexplored_hidden_nodes = hidden_nodes - explored_hidden_nodes
 
-        # 第三阶段：从输出节点反向探索
+        # =====================
+        # 第三阶段：从输出节点反向探索（outgoing=False）
+        # =====================
         for coord in outputs:
-
             if self.use_3d:
                 root = self.division_initialization_3d(coord, False)
-            else:
-                root = self.division_initialization_2d(coord, False)
-
-            if self.use_3d:
                 self.pruning_extraction_3d(coord, root, False)
             else:
+                root = self.division_initialization_2d(coord, False)
                 self.pruning_extraction_2d(coord, root, False)
 
+            assert all(hasattr(c, "src") and hasattr(c, "dst") for c in self.connections), \
+                "ES-HyperNEAT pruning must return Connection3D edges with src/dst"
 
-            connections3 |= self.connections
+            connections3 |= set(self.connections)
             self.connections.clear()
 
-        all_connections = connections1 | connections2 | connections3
-        return self.clean_net(all_connections)
+        # =====================
+        # 汇总并交给 clean_net 过滤出真正参与 I→O 的连通子图
+        # =====================
+        all_connections: set[Connection3D] = connections1 | connections2 | connections3
+        true_nodes, true_connections = self.clean_net(all_connections)
 
-    def clean_net(self, connections: set[Connection3D]):
-        """
-        Clean a net for dangling connections:
-        Intersects paths from input nodes with paths to output.
-        """
-        # 1) substrate.input/output_coordinates 已经是 List[Coordinate]
-        connected_to_inputs = set(coord.to_tuple()
-                                  for coord in self.substrate.input_coordinates)
-        connected_to_outputs = set(coord.to_tuple()
-                                   for coord in self.substrate.output_coordinates)
-        true_connections: set[Connection3D] = set()
-
-        initial_input_connections = copy.deepcopy(connections)
-        initial_output_connections = copy.deepcopy(connections)
-
-        # 2) 从 inputs 向外扩散
-        add_happened = True
-        while add_happened:
-            add_happened = False
-            for c in list(initial_input_connections):
-                # 使用 Connection3D.src / dst
-                src_tuple = c.src.to_tuple()
-                dst_tuple = c.dst.to_tuple()
-                if src_tuple in connected_to_inputs:
-                    connected_to_inputs.add(dst_tuple)
-                    initial_input_connections.remove(c)
-                    add_happened = True
-
-        # 3) 从 outputs 向内扩散
-        add_happened = True
-        while add_happened:
-            add_happened = False
-            for c in list(initial_output_connections):
-                src_tuple = c.src.to_tuple()
-                dst_tuple = c.dst.to_tuple()
-                if dst_tuple in connected_to_outputs:
-                    connected_to_outputs.add(src_tuple)
-                    initial_output_connections.remove(c)
-                    add_happened = True
-
-        # 4) 交集为真正连通的节点
-        true_nodes = connected_to_inputs.intersection(connected_to_outputs)
-
-        # 5) 过滤有效连接
-        for c in connections:
-            if c.src.to_tuple() in true_nodes and c.dst.to_tuple() in true_nodes:
-                true_connections.add(c)
-
-        # 6) 去除输入/输出节点本身
-        in_out_tuples = set(coord.to_tuple() for coord in
-                            (self.substrate.input_coordinates +
-                             self.substrate.output_coordinates))
-        true_nodes -= in_out_tuples
-
+        # 返回 Coordinate / Connection3D
         return true_nodes, true_connections
 
-def get_nodes_and_edges(self):
-    """
-    Returns:
-    nodes: List[Coordinate] of hidden nodes (excluding input/output)
-    edges: List[Connection3D] of all expressed 3D connections
-    """
-    node_tuples, conns = self.es_hyperneat()
-    # 将三元组重装回 Coordinate
-    nodes = [Coordinate(x, y, z) for (x, y, z) in node_tuples]
-    return nodes, list(conns)
-# 3D_update--------------------------------------------------------------------------------
+    def clean_net(self, connections):
+        """
+        过滤出真正参与 I→O 路径的连通子图，并返回：
+        - true_nodes: set[Coordinate]       # 仅隐藏节点
+        - true_connections: set[Connection3D]
+        前置条件：connections 里的每条边都是 Connection3D，端点为 Coordinate。
+        """
+        # 结构断言（生产侧必须产新结构；不做转换）
+        assert all(hasattr(c, "src") and hasattr(c, "dst") for c in connections), \
+            "clean_net() expects Connection3D edges"
 
+        inputs:  set[Coordinate] = set(self.substrate.input_coordinates)
+        outputs: set[Coordinate] = set(self.substrate.output_coordinates)
+
+        # 正向可达：从 inputs 经边扩张
+        connected_to_inputs: set[Coordinate] = set(inputs)
+        changed = True
+        while changed:
+            changed = False
+            for c in connections:
+                if c.src in connected_to_inputs and c.dst not in connected_to_inputs:
+                    connected_to_inputs.add(c.dst)
+                    changed = True
+
+        # 反向可达：从 outputs 逆边扩张
+        connected_to_outputs: set[Coordinate] = set(outputs)
+        changed = True
+        while changed:
+            changed = False
+            for c in connections:
+                if c.dst in connected_to_outputs and c.src not in connected_to_outputs:
+                    connected_to_outputs.add(c.src)
+                    changed = True
+
+        # 参与 I→O 的节点集合
+        participating: set[Coordinate] = connected_to_inputs & connected_to_outputs
+
+        # 仅返回隐藏节点（去掉显式 I/O）
+        io_nodes = inputs | outputs
+        true_nodes: set[Coordinate] = {
+            n for n in participating if n not in io_nodes}
+
+        # 边保留条件：端点处于 I→O 参与集，且权重非零
+        true_connections = {
+            c for c in connections
+            if (c.src in connected_to_inputs and c.dst in connected_to_outputs and c.weight != 0.0)
+        }
+
+        # 不变式
+        assert all(isinstance(n, Coordinate) for n in true_nodes)
+        return true_nodes, true_connections
+
+    def get_nodes_and_edges(self):
+        """
+        返回用于外部检查/可视化的数据：
+        - nodes: list[Coordinate]
+        - edges: list[Connection3D]
+        """
+        nodes, edges = self.es_hyperneat()  # nodes: set[Coordinate]
+        nodes_sorted = sorted(nodes, key=lambda c: (
+            c.x, c.y, getattr(c, "z", 0.0)))
+        return nodes_sorted, list(edges)
+
+# 3D_update--------------------------------------------------------------------------------
